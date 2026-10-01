@@ -1,0 +1,285 @@
+:root {
+  --bg: #15131a;
+  --panel: #1f1c26;
+  --panel-2: #2a2633;
+  --text: #ece7f2;
+  --muted: #9d95ab;
+  --accent: #e0b65a;
+  --speech: #9fd0ff;
+  --danger: #ff6b6b;
+  --border: #3a3546;
+
+  color-scheme: dark;
+  font-family: 'Hiragino Sans', 'Noto Sans JP', 'Yu Gothic', system-ui, sans-serif;
+  line-height: 1.7;
+  color: var(--text);
+  background: var(--bg);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+}
+
+button {
+  font: inherit;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 14px;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.app {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.hud {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.hud h1 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.hud-stats {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+}
+
+.loop {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.clock {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 1.8rem;
+  color: var(--accent);
+}
+
+.clock.danger {
+  color: var(--danger);
+  animation: pulse 1s infinite;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 1fr 300px;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+@media (max-width: 760px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.scene,
+.notebook {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.room h2 {
+  margin: 0 0 4px;
+  font-size: 1.1rem;
+}
+
+.room p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.log {
+  margin: 16px 0;
+  padding: 12px;
+  height: 260px;
+  overflow-y: auto;
+  background: var(--bg);
+  border-radius: 8px;
+}
+
+.log p {
+  margin: 0 0 6px;
+}
+
+.log-speech {
+  color: var(--speech);
+}
+
+.log-system {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.group h3 {
+  width: 4em;
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: normal;
+  color: var(--muted);
+}
+
+.codepad {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+}
+
+.codepad label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+}
+
+.codepad input {
+  width: 6em;
+  font: inherit;
+  font-family: ui-monospace, Menlo, monospace;
+  letter-spacing: 0.2em;
+  text-align: center;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px;
+}
+
+.hint {
+  margin: 12px 0 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.notebook h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.notebook-sub {
+  margin: 0 0 12px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.notebook ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.notebook li {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 10px;
+  background: var(--panel-2);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+
+.notebook li strong {
+  color: var(--accent);
+}
+
+.empty {
+  color: var(--muted);
+}
+
+.restart {
+  margin-top: 16px;
+  width: 100%;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.75);
+}
+
+.overlay.flash {
+  animation: flash 1.2s ease-out;
+}
+
+.dialog {
+  max-width: 420px;
+  width: 100%;
+  padding: 24px;
+  text-align: center;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.dialog .big {
+  font-size: 1.6rem;
+  color: var(--accent);
+  margin-top: 0;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@keyframes flash {
+  from {
+    background: rgba(255, 255, 255, 1);
+  }
+  to {
+    background: rgba(0, 0, 0, 0.75);
+  }
+}
