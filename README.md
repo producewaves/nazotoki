@@ -29,3 +29,9 @@ npm run build   # 本番ビルド（dist/）
 
 新しい部屋や謎を追加するときは、まず `scenario.ts` にデータを足し、
 特別な処理が必要な場合だけ `engine.ts` の `examine` / `talk` を拡張します。
+
+## 公開（GitHub Pages）
+
+`main` にプッシュすると `.github/workflows/deploy.yml` が lint・テスト・ビルドを実行し、
+GitHub Pages にデプロイします。初回だけ、リポジトリの Settings → Pages で
+Source を「GitHub Actions」にしてください。
