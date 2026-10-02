@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useReducer, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { facingLabel, initialState, placeName, reducer, type Dir, type GameState, type LogEntry } from './game/engine'
 import { CLUES, CLUE_ORDER, EXPLOSION_TIME, formatTime } from './game/scenario'
 import { GameView } from './ui/GameView'
@@ -51,12 +51,19 @@ function TextBox({ entries }: { entries: LogEntry[] }) {
 
 function CodePad({
   label,
+  time,
+  message,
   onSubmit,
   onClose,
+  onWait,
 }: {
   label: string
+  time: string
+  message: string
   onSubmit: (code: string) => void
   onClose: () => void
+  /** 入力画面を開いたまま待てる（装置の前で） */
+  onWait?: () => void
 }) {
   const [code, setCode] = useState('')
   const submit = (e: FormEvent) => {
@@ -69,6 +76,7 @@ function CodePad({
     <div className="overlay" role="dialog" aria-modal="true">
       <form className="dialog codepad" onSubmit={submit}>
         <p className="big">{label}</p>
+        <p className="pad-time">{time}</p>
         <input
           autoFocus
           inputMode="numeric"
@@ -80,10 +88,16 @@ function CodePad({
           onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 4))}
           onKeyDown={(e) => e.key === 'Escape' && onClose()}
         />
+        <p className="pad-message">{message}</p>
         <div className="row">
           <button type="button" onClick={onClose}>
             離れる
           </button>
+          {onWait && (
+            <button type="button" onClick={onWait}>
+              1分待つ
+            </button>
+          )}
           <button type="submit" className="primary" disabled={code.length !== 4}>
             入力
           </button>
@@ -91,6 +105,47 @@ function CodePad({
       </form>
     </div>
   )
+}
+
+/** エンディング。一行ずつ浮かび上がる */
+function Ending({
+  kind,
+  lines,
+  question,
+  children,
+}: {
+  kind: 'normal' | 'true'
+  lines: string[]
+  question?: string
+  children: ReactNode
+}) {
+  const delay = (i: number) => ({ animationDelay: `${0.4 + i * 1.1}s` })
+  return (
+    <div className={`overlay ending ${kind}`} role="dialog" aria-modal="true">
+      <div className="dialog">
+        {lines.map((line, i) => (
+          <p key={i} className="ending-line" style={delay(i)}>
+            {line}
+          </p>
+        ))}
+        {question && (
+          <p className="ending-line question" style={delay(lines.length + 0.5)}>
+            {question}
+          </p>
+        )}
+        <div className="ending-line ending-foot" style={delay(lines.length + (question ? 2 : 1))}>
+          {children}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+const STAGE_CLASS: Record<GameState['status'], string> = {
+  playing: '',
+  exploded: 'shake',
+  normalEnd: 'frozen',
+  trueEnd: 'dawn',
 }
 
 const DPAD: { dir: Dir; label: string; mark: string }[] = [
@@ -129,13 +184,10 @@ export default function App() {
           <span className="place">{placeName(state)}</span>
         </div>
         <div className="hud-stats">
-          {state.hasKey && (
-            <span className="item" title="小さな真鍮の鍵">
-              🗝️
-            </span>
-          )}
+          {state.hasKey && <span className="item">鍵</span>}
+          {state.hasHand && <span className="item">長針</span>}
           <span className="loop">{state.loop}周目</span>
-          <span className={`clock ${remaining <= 120 ? 'danger' : ''}`}>
+          <span className={`clock ${remaining <= 120 && state.status !== 'trueEnd' ? 'danger' : ''}`}>
             {formatTime(state.time)}
             <small>:{seconds}</small>
           </span>
@@ -144,7 +196,7 @@ export default function App() {
 
       <main className="layout">
         <section className="scene">
-          <div className={`stage ${state.status === 'exploded' ? 'shake' : ''}`}>
+          <div className={`stage ${STAGE_CLASS[state.status]}`}>
             <GameView state={state} dispatch={dispatch} input={input} />
           </div>
 
@@ -216,8 +268,11 @@ export default function App() {
         <CodePad
           key={state.prompt}
           label={state.prompt === 'vaultDoor' ? '鉄の扉' : '四つの溝'}
+          time={`${formatTime(state.time)}:${seconds}`}
+          message={state.log.at(-1)?.text ?? ''}
           onSubmit={(code) => dispatch({ type: 'enterCode', target: state.prompt!, code })}
           onClose={() => dispatch({ type: 'closePrompt' })}
+          onWait={state.prompt === 'device' ? () => dispatch({ type: 'wait', minutes: 1 }) : undefined}
         />
       )}
 
@@ -232,18 +287,48 @@ export default function App() {
         </div>
       )}
 
-      {state.status === 'cleared' && (
-        <div className="overlay" role="dialog" aria-modal="true">
-          <div className="dialog">
-            <p className="big">時計の音が、止んだ。</p>
-            <p>
-              {state.loop}周目　{formatTime(state.time)}
-            </p>
-            <button className="primary" autoFocus onClick={() => dispatch({ type: 'restart' })}>
-              もう一度
+      {state.status === 'normalEnd' && (
+        <Ending
+          kind="normal"
+          lines={[
+            '時計の音が、止んだ。',
+            '光は、もう来ない。',
+            '……大時計の針は、二時五十分のまま。',
+            '警備員も、学芸員も、動かない。',
+            '三時は、もう来ない。',
+          ]}
+          question="本当に、この答えでよかったのだろうか。"
+        >
+          <p className="end-title">NORMAL END</p>
+          <p className="end-hint">まだ、刻まれていない時刻がある。</p>
+          <div className="row">
+            <button onClick={restart}>最初から</button>
+            <button className="primary" onClick={() => dispatch({ type: 'continue' })}>
+              二時五十分へ
             </button>
           </div>
-        </div>
+        </Ending>
+      )}
+
+      {state.status === 'trueEnd' && (
+        <Ending
+          kind="true"
+          lines={[
+            '長針が、十二を越えた。',
+            '――三時五分。光は、来なかった。',
+            '閉館の音楽が流れはじめる。',
+            '学芸員が、肖像画の前に立っていた。',
+            '「祖父がずっと見たかったのは、この先だったのね」',
+          ]}
+        >
+          <p className="end-title">TRUE END</p>
+          <p className="end-hint">{state.loop}周目</p>
+          <div className="row">
+            <button className="primary" onClick={() => dispatch({ type: 'restart' })}>
+              最初から
+            </button>
+          </div>
+        </Ending>
       )}
     </div>
   )

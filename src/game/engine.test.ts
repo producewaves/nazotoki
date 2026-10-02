@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { canStep, facingLabel, initialState, npcPos, placeName, reducer, type Action, type Dir, type GameState } from './engine'
-import { at, LOOP_START, START_POS } from './scenario'
+import { at, LAST_MINUTE, LOOP_START, START_POS } from './scenario'
 
 const play = (state: GameState, actions: Action[]) => actions.reduce(reducer, state)
 const go = (dir: Dir, n = 1): Action[] => Array.from({ length: n }, () => ({ type: 'step', dir }))
@@ -95,6 +95,7 @@ describe('収蔵庫', () => {
     let s = play(initialState(), [...toCounter, ...counterToVault])
     expect(s.prompt).toBe('vaultDoor')
     expect(reducer(s, { type: 'step', dir: 'left' })).toBe(s)
+    expect(reducer(s, interact)).toBe(s)
     s = reducer(s, { type: 'enterCode', target: 'vaultDoor', code: '0000' })
     expect(s.vaultUnlocked).toBe(false)
     s = reducer(s, { type: 'closePrompt' })
@@ -116,6 +117,78 @@ describe('収蔵庫', () => {
     s = play(s, [...vaultToDevice, interact])
     expect(s.prompt).toBe('device')
     s = reducer(s, { type: 'enterCode', target: 'device', code: '1450' })
-    expect(s.status).toBe('cleared')
+    expect(s.status).toBe('normalEnd')
+  })
+})
+
+/** 開いた収蔵庫の扉から長針の入った木箱の前まで */
+const vaultToCrate = [...go('right', 8), ...go('up', 2)]
+/** 木箱の前からロビーの大時計の前まで */
+const crateToClock = [...go('down'), ...go('left', 10), ...go('down', 4), ...go('left', 2)]
+/** 大時計の前から受付の前まで */
+const clockToCounter = [...go('right'), ...go('down', 5), ...go('left')]
+
+/** ノーマルエンドを見て、二時五十分へ戻ったところ */
+const afterNormalEnd = () => {
+  let s = play(initialState(), toCounter)
+  s = waitUntil(s, at(14, 56))
+  s = play(s, [interact, ...counterToVault, { type: 'enterCode', target: 'vaultDoor', code: '1887' }])
+  s = play(s, [...vaultToDevice, interact, { type: 'enterCode', target: 'device', code: '1450' }])
+  expect(s.status).toBe('normalEnd')
+  return reducer(s, { type: 'continue' })
+}
+
+describe('ノーマルエンドの後', () => {
+  it('記憶を持ったまま二時五十分へ戻り、ループごとの状態はリセットされる', () => {
+    const s = afterNormalEnd()
+    expect(s.status).toBe('playing')
+    expect(s.seenNormal).toBe(true)
+    expect(s.clues).toContain('normalEnd')
+    expect(s.hasKey).toBe(false)
+    expect(s.time).toBe(LOOP_START)
+  })
+
+  it('ノーマルエンドの前は、木箱を調べても何も見つからない', () => {
+    let s = play(initialState(), [...toCounter, ...counterToVault])
+    s = play(s, [{ type: 'enterCode', target: 'vaultDoor', code: '1887' }, ...vaultToCrate, interact])
+    expect(facingLabel(s)).toBe('木箱')
+    expect(s.hasHand).toBe(false)
+  })
+
+  it('長針なしで1505を入れても進まない', () => {
+    let s = afterNormalEnd()
+    s = play(s, toCounter)
+    s = waitUntil(s, at(14, 56))
+    s = play(s, [interact, ...counterToVault, { type: 'enterCode', target: 'vaultDoor', code: '1887' }])
+    s = play(s, [...vaultToDevice, interact])
+    s = waitUntil(s, LAST_MINUTE)
+    s = reducer(s, { type: 'enterCode', target: 'device', code: '1505' })
+    expect(s.status).not.toBe('trueEnd')
+  })
+
+  it('長針で大時計を直し、最後の一分に1505を刻むとトゥルーエンド', () => {
+    let s = afterNormalEnd()
+    // 収蔵庫の木箱から長針を取る
+    s = play(s, [...toCounter, ...counterToVault, { type: 'enterCode', target: 'vaultDoor', code: '1887' }])
+    s = play(s, [...vaultToCrate, interact])
+    expect(s.hasHand).toBe(true)
+    // 大時計にはめる
+    s = play(s, [...crateToClock, interact])
+    expect(s.clockFixed).toBe(true)
+    // 見回りの隙に鍵を取り、ケースを開ける
+    s = play(s, clockToCounter)
+    s = waitUntil(s, at(14, 56))
+    // 扉はもう開いているので、そのまま収蔵庫へ入る
+    s = play(s, [interact, ...counterToVault, ...vaultToDevice.slice(1), interact])
+    expect(s.clues).toContain('lastMinute')
+    // 早すぎると受け付けない
+    s = reducer(s, { type: 'enterCode', target: 'device', code: '1505' })
+    expect(s.status).toBe('playing')
+    // 装置の前で待ち、最後の一分に刻む
+    s = waitUntil(s, LAST_MINUTE)
+    expect(s.status).toBe('playing')
+    expect(s.prompt).toBe('device')
+    s = reducer(s, { type: 'enterCode', target: 'device', code: '1505' })
+    expect(s.status).toBe('trueEnd')
   })
 })

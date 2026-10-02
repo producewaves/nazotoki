@@ -166,7 +166,14 @@ export const drawEntrance = (ctx: Ctx, tx: number, ty: number, left: boolean) =>
 
 // ---------------------------------------------------------------- 物
 
-export const drawObject = (ctx: Ctx, ch: string, tx: number, ty: number, t: number, caseOpen: boolean) => {
+export interface ObjectState {
+  caseOpen: boolean
+  clockFixed: boolean
+  /** ゲーム内の時刻（秒）。直した大時計の針に使う */
+  time: number
+}
+
+export const drawObject = (ctx: Ctx, ch: string, tx: number, ty: number, t: number, o: ObjectState) => {
   const x = tx * T
   const y = ty * T
   const shadow = (w = 12) => px(ctx, x + (T - w) / 2, y + 13, w, 3, '#00000040')
@@ -177,8 +184,15 @@ export const drawObject = (ctx: Ctx, ch: string, tx: number, ty: number, t: numb
       px(ctx, x + 3, y - 12, 10, 27, '#4f2d1b')
       px(ctx, x + 4, y - 11, 8, 25, '#6a3d24')
       px(ctx, x + 4, y - 10, 8, 8, '#e9dfc6')
-      px(ctx, x + 7, y - 7, 1, 3, '#2b1d14')
+      // 短針（二時と三時のあいだ）。長針は、直すまでない
       px(ctx, x + 8, y - 7, 2, 1, '#2b1d14')
+      px(ctx, x + 7, y - 7, 1, 1, '#2b1d14')
+      if (o.clockFixed) {
+        const ang = (((o.time / 60) % 60) / 60) * Math.PI * 2
+        for (let r = 1; r <= 3; r++) {
+          px(ctx, x + 7 + Math.round(Math.sin(ang) * r), y - 7 - Math.round(Math.cos(ang) * r), 1, 1, '#9a6a1a')
+        }
+      }
       px(ctx, x + 5, y, 6, 11, '#2c1a10')
       const swing = Math.round(Math.sin(t * 3) * 2)
       px(ctx, x + 7 + swing, y + 1, 2, 7, '#b88b2a')
@@ -227,7 +241,7 @@ export const drawObject = (ctx: Ctx, ch: string, tx: number, ty: number, t: numb
         px(ctx, Math.round(cx + Math.cos(ang) * 4) - 1, Math.round(cy + Math.sin(ang) * 4) - 1, 2, 2, '#d9a93a')
       }
       px(ctx, cx - 1, cy - 1, 2, 2, '#5a3c10')
-      if (!caseOpen) {
+      if (!o.caseOpen) {
         ctx.fillStyle = '#a8d8ff30'
         ctx.fillRect(x + 2, y - 4, 12, 13)
         px(ctx, x + 2, y - 4, 12, 1, '#d8f0ff80')
@@ -280,7 +294,8 @@ export const drawObject = (ctx: Ctx, ch: string, tx: number, ty: number, t: numb
       px(ctx, x + 7, y + 2, 2, 2, '#5aa553')
       break
     }
-    case 'x': {
+    case 'x':
+    case 'X': {
       shadow(14)
       px(ctx, x + 1, y + 2, 14, 13, '#7a5a34')
       px(ctx, x + 2, y + 3, 12, 11, '#957040')

@@ -3,6 +3,8 @@ import {
   DECOR_TEXT,
   DEVICE_CODE,
   EXPLOSION_TIME,
+  FORWARD_CODE,
+  LAST_MINUTE,
   LOOP_START,
   MAP,
   NPC_NAMES,
@@ -26,7 +28,7 @@ export interface LogEntry {
   text: string
 }
 
-export type Status = 'playing' | 'exploded' | 'cleared'
+export type Status = 'playing' | 'exploded' | 'normalEnd' | 'trueEnd'
 
 export type Dir = 'up' | 'down' | 'left' | 'right'
 
@@ -43,14 +45,18 @@ export interface GameState {
   pos: Pos
   facing: Dir
   status: Status
-  /** ここから下の3つはループごとにリセットされる */
+  /** ここから下の5つはループごとにリセットされる */
   vaultUnlocked: boolean
   hasKey: boolean
   caseOpen: boolean
+  hasHand: boolean
+  clockFixed: boolean
   /** 暗証番号の入力画面を開いている対象 */
   prompt: CodeTarget | null
   /** ループをまたいで残る記憶 */
   clues: ClueId[]
+  /** ノーマルエンドを見たか。見た後だけ、隠された手がかりが現れる */
+  seenNormal: boolean
   /** このループ中の出来事 */
   log: LogEntry[]
   /** 最後の行動で増えた出来事が log の何番目から始まるか */
@@ -64,6 +70,8 @@ export type Action =
   | { type: 'enterCode'; target: CodeTarget; code: string }
   | { type: 'closePrompt' }
   | { type: 'wake' }
+  /** ノーマルエンドの後、記憶を持ったまま二時五十分へ戻る */
+  | { type: 'continue' }
   | { type: 'restart' }
 
 const narration = (text: string): LogEntry => ({ kind: 'narration', text })
@@ -152,12 +160,13 @@ export const placeName = (state: GameState): string => {
 export const canStep = (state: GameState, dir: Dir): boolean =>
   tileAt(state, ahead({ pos: state.pos, facing: dir })).kind === 'floor'
 
-const loopStartLog = (loop: number): LogEntry[] =>
-  loop === 1
-    ? [narration('閉館間際の美術館。'), narration('大時計が、二時五十分を指している。')]
-    : [narration('……また、二時五十分。')]
+const loopStartLog = (loop: number, seenNormal: boolean): LogEntry[] => {
+  if (loop === 1) return [narration('閉館間際の美術館。'), narration('大時計が、二時五十分を指している。')]
+  if (seenNormal) return [narration('……二時五十分。'), narration('あの静けさを、覚えている。')]
+  return [narration('……また、二時五十分。')]
+}
 
-export const startLoop = (loop: number, clues: ClueId[]): GameState => ({
+export const startLoop = (loop: number, clues: ClueId[], seenNormal = false): GameState => ({
   loop,
   time: LOOP_START,
   pos: START_POS,
@@ -166,9 +175,12 @@ export const startLoop = (loop: number, clues: ClueId[]): GameState => ({
   vaultUnlocked: false,
   hasKey: false,
   caseOpen: false,
+  hasHand: false,
+  clockFixed: false,
   prompt: null,
   clues,
-  log: loopStartLog(loop),
+  seenNormal,
+  log: loopStartLog(loop, seenNormal),
   mark: 0,
 })
 
@@ -193,6 +205,22 @@ const examine = (state: GameState, target: TargetId): Outcome => {
   const cost = COST.examine
   switch (target) {
     case 'clock':
+      if (state.clockFixed) return { cost, log: [narration('大時計が、確かに時を刻んでいる。')] }
+      if (state.hasHand) {
+        return {
+          cost,
+          log: [narration('長針をはめると、振り子が大きく揺れた。'), narration('大時計が、本当の時刻を刻みはじめた。')],
+          clues: ['clockFixed'],
+          patch: { hasHand: false, clockFixed: true },
+        }
+      }
+      if (state.seenNormal) {
+        return {
+          cost,
+          log: [narration('……長針が、ない。'), narration('ずっと二時五十分だと思っていた。短針しか、なかったのに。')],
+          clues: ['clockHand'],
+        }
+      }
       if (state.loop === 1) return { cost, log: [narration('振り子が、重たく揺れている。')] }
       return {
         cost,
@@ -208,6 +236,13 @@ const examine = (state: GameState, target: TargetId): Outcome => {
     case 'harbor':
       return { cost, log: [narration('夕暮れの港。船は一隻も出ていない。')] }
     case 'sketch':
+      if (state.seenNormal) {
+        return {
+          cost,
+          log: [narration('誰かの横顔の素描。額の裏に、鉛筆の走り書き。'), narration('「長針は眠らせた。冷たい部屋の、箱の中」')],
+          clues: ['sketchBack'],
+        }
+      }
       return { cost, log: [narration('誰かの横顔の素描。題名はない。')] }
     case 'desk':
       if (npcPos('curator', state.time)) {
@@ -230,14 +265,28 @@ const examine = (state: GameState, target: TargetId): Outcome => {
         patch: { hasKey: true },
       }
     case 'device':
+      if (state.caseOpen && state.clockFixed) {
+        return {
+          cost,
+          log: [
+            narration('大時計の音に合わせて、溝の上の銘が浮かび上がった。'),
+            narration('「進みたいなら、最後の一分に、次の刻を」'),
+          ],
+          clues: ['dial', 'lastMinute'],
+          patch: { prompt: 'device' },
+        }
+      }
       if (state.caseOpen) {
         return { cost, log: [narration('溝が四つ。「はじまりへ」')], clues: ['dial'], patch: { prompt: 'device' } }
       }
       if (state.hasKey) {
+        const opened = [narration('鍵を回すと、ケースが開いた。'), narration('歯車の下に、数字を刻む溝が四つ。「はじまりへ」')]
         return {
           cost,
-          log: [narration('鍵を回すと、ケースが開いた。'), narration('歯車の下に、数字を刻む溝が四つ。「はじまりへ」')],
-          clues: ['device', 'dial'],
+          log: state.clockFixed
+            ? [...opened, narration('大時計の音に合わせて、もう一行が浮かび上がる。'), narration('「進みたいなら、最後の一分に、次の刻を」')]
+            : opened,
+          clues: state.clockFixed ? ['device', 'dial', 'lastMinute'] : ['device', 'dial'],
           patch: { caseOpen: true, prompt: 'device' },
         }
       }
@@ -248,6 +297,16 @@ const examine = (state: GameState, target: TargetId): Outcome => {
       }
     case 'entrance':
       return { cost, log: [narration('鍵がかかっている。外は、やけに静かだ。')] }
+    case 'crate':
+      if (state.seenNormal && !state.hasHand && !state.clockFixed) {
+        return {
+          cost,
+          log: [narration('箱の底に、布にくるまれた真鍮の長い針。')],
+          clues: ['handFound'],
+          patch: { hasHand: true },
+        }
+      }
+      return { cost, log: [narration('埃をかぶった木箱。')] }
   }
 }
 
@@ -273,6 +332,16 @@ const talk = (state: GameState, npc: NpcId): Outcome => {
       clues: ['guardCode', 'curatorBreak'],
     }
   }
+  if (state.seenNormal && state.clues.includes('device')) {
+    return {
+      cost,
+      log: [
+        speech('学芸員「祖父の口癖？ ……そういえば、続きがあったの」'),
+        speech('学芸員「『進みたいなら、いちばん怖い時刻を刻め』」'),
+      ],
+      clues: ['curatorHint2'],
+    }
+  }
   if (state.clues.includes('device')) {
     return {
       cost,
@@ -286,7 +355,7 @@ const talk = (state: GameState, npc: NpcId): Outcome => {
   return { cost, log: [speech('学芸員「閉館前で忙しいの。ごめんなさいね」')] }
 }
 
-const enterCode = (target: CodeTarget, code: string): Outcome => {
+const enterCode = (state: GameState, target: CodeTarget, code: string): Outcome => {
   const cost = COST.code
   if (target === 'vaultDoor') {
     if (code === VAULT_CODE) {
@@ -298,8 +367,20 @@ const enterCode = (target: CodeTarget, code: string): Outcome => {
     return {
       cost,
       log: [narration('「1450」'), narration('歯車が、ゆっくりと止まった。')],
-      patch: { status: 'cleared', prompt: null },
+      clues: ['normalEnd'],
+      patch: { status: 'normalEnd', prompt: null },
     }
+  }
+  if (code === FORWARD_CODE && state.clockFixed) {
+    if (state.time < LAST_MINUTE) return { cost, log: [narration('針が震えた。まだ、その時ではない。')] }
+    return {
+      cost,
+      log: [narration('「1505」'), narration('長針が、十二を越えた。')],
+      patch: { status: 'trueEnd', prompt: null },
+    }
+  }
+  if (code === FORWARD_CODE && state.seenNormal) {
+    return { cost, log: [narration('歯車が軋んだ。……何かが、足りない。')] }
   }
   return { cost, log: [narration('何も起こらない。')] }
 }
@@ -349,11 +430,15 @@ const step = (state: GameState, dir: Dir): GameState => {
 export const reducer = (state: GameState, action: Action): GameState => {
   if (action.type === 'restart') return initialState()
   if (action.type === 'wake') {
-    return state.status === 'exploded' ? startLoop(state.loop + 1, state.clues) : state
+    return state.status === 'exploded' ? startLoop(state.loop + 1, state.clues, state.seenNormal) : state
+  }
+  if (action.type === 'continue') {
+    return state.status === 'normalEnd' ? startLoop(state.loop + 1, state.clues, true) : state
   }
   if (state.status !== 'playing') return state
   if (action.type === 'closePrompt') return { ...state, prompt: null }
-  if (state.prompt && action.type !== 'enterCode') return state
+  // 入力画面を開いたまま「待つ」ことはできる（装置の前で最後の一分を待つため）
+  if (state.prompt && action.type !== 'enterCode' && action.type !== 'wait') return state
 
   switch (action.type) {
     case 'step':
@@ -366,6 +451,6 @@ export const reducer = (state: GameState, action: Action): GameState => {
     }
     case 'enterCode':
       if (state.prompt !== action.target) return state
-      return advance(state, enterCode(action.target, action.code))
+      return advance(state, enterCode(state, action.target, action.code))
   }
 }

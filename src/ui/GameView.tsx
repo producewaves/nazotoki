@@ -158,8 +158,9 @@ export function GameView({
     const frame = (now: number) => {
       const dt = Math.min(0.05, (now - last) / 1000)
       last = now
-      t += dt
       const s = stateRef.current
+      // ノーマルエンドでは、振り子も歯車も止まる
+      if (s.status !== 'normalEnd') t += dt
 
       // 新しいループに入ったら全員を元の位置へ
       if (s.loop !== loop) {
@@ -248,6 +249,8 @@ export function GameView({
         t,
         vaultUnlocked: s.vaultUnlocked,
         caseOpen: s.caseOpen,
+        clockFixed: s.clockFixed,
+        ended: s.status === 'normalEnd' || s.status === 'trueEnd',
         player: toActor(player, LOOKS.player, !arrived || player.anim > 0),
         npcs: [
           toActor(npcs.get('guard')!, LOOKS.guard, npcs.get('guard')!.path.length > 0),

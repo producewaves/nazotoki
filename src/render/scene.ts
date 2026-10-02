@@ -35,6 +35,9 @@ export interface Scene {
   t: number
   vaultUnlocked: boolean
   caseOpen: boolean
+  clockFixed: boolean
+  /** エンディング中は 15:05 の警告を出さない */
+  ended: boolean
   player: Actor
   npcs: Actor[]
   /** 調べられるものの枠を出すマス */
@@ -43,7 +46,7 @@ export interface Scene {
 
 /** 壁として扱う（上に面が見える）文字 */
 const WALLISH = new Set(['#', 'P', 'Q', 'R', 'E'])
-const OBJECTS = new Set(['C', 'D', 'd', 'T', 'M', 'B', 'S', 'b', 'p', 'x'])
+const OBJECTS = new Set(['C', 'D', 'd', 'T', 'M', 'B', 'S', 'b', 'p', 'x', 'X'])
 
 /** 照明。マス単位の座標と半径 */
 const LIGHTS = [
@@ -103,7 +106,7 @@ const drawLighting = (ctx: CanvasRenderingContext2D, scene: Scene) => {
 
   // 15:05が近づくと赤く脈打つ
   const left = EXPLOSION_TIME - scene.time
-  if (left <= 120) {
+  if (left <= 120 && !scene.ended) {
     const k = (1 - left / 120) * (0.5 + Math.sin(scene.t * 6) * 0.5) * 0.18
     ctx.fillStyle = `rgba(200, 30, 40, ${k})`
     ctx.fillRect(0, 0, WIDTH, HEIGHT)
@@ -146,7 +149,10 @@ export const drawScene = (ctx: CanvasRenderingContext2D, scene: Scene) => {
   for (let y = 0; y < ROWS; y++) {
     for (let x = 0; x < COLS; x++) {
       const ch = MAP[y][x]
-      if (OBJECTS.has(ch)) items.push({ y, draw: () => drawObject(ctx, ch, x, y, scene.t, scene.caseOpen) })
+      if (OBJECTS.has(ch)) {
+        const o = { caseOpen: scene.caseOpen, clockFixed: scene.clockFixed, time: scene.time }
+        items.push({ y, draw: () => drawObject(ctx, ch, x, y, scene.t, o) })
+      }
     }
   }
   for (const a of [...scene.npcs, scene.player]) {

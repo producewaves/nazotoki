@@ -15,6 +15,13 @@ export type ClueId =
   | 'guardPatrol'
   | 'dial'
   | 'curatorHint'
+  | 'normalEnd'
+  | 'clockHand'
+  | 'sketchBack'
+  | 'handFound'
+  | 'clockFixed'
+  | 'lastMinute'
+  | 'curatorHint2'
 
 export type TargetId =
   | 'clock'
@@ -25,6 +32,7 @@ export type TargetId =
   | 'counter'
   | 'device'
   | 'entrance'
+  | 'crate'
 
 export type NpcId = 'guard' | 'curator'
 
@@ -45,7 +53,12 @@ export const COST = {
 } as const
 
 export const VAULT_CODE = '1887'
+/** ノーマルエンド：はじまりに戻る */
 export const DEVICE_CODE = '1450'
+/** トゥルーエンド：いちばん怖い時刻へ進む */
+export const FORWARD_CODE = '1505'
+/** トゥルーエンドの番号を受け付ける「最後の一分」の始まり */
+export const LAST_MINUTE = at(15, 4)
 
 export const formatTime = (seconds: number) => {
   const h = Math.floor(seconds / 3600)
@@ -59,10 +72,11 @@ export const formatTime = (seconds: number) => {
  * 壁の絵：`P` 肖像画 / `Q` 港の絵 / `R` 素描
  * 物：`C` 大時計 / `D` 学芸員の机 / `T` 受付カウンター / `M` ガラスケースの装置
  * 飾り：`B` 本棚 / `d` 作業机 / `S` 彫像 / `b` ベンチ / `p` 植木 / `x` 木箱
+ * `X` 木箱（見た目は `x` と同じ。ノーマルエンドの後だけ意味を持つ）
  */
 export const MAP = [
   '########################',
-  '#BB....p#p....p#x..M..x#',
+  '#BB....p#p....p#x..M..X#',
   '#...D...#......#.......#',
   '#.......+......V.......#',
   '#d......#......#.......#',
@@ -114,6 +128,7 @@ export const TARGET_TILES: Record<string, TargetId> = {
   T: 'counter',
   M: 'device',
   E: 'entrance',
+  X: 'crate',
 }
 
 export const TARGET_NAMES: Record<TargetId, string> = {
@@ -125,6 +140,7 @@ export const TARGET_NAMES: Record<TargetId, string> = {
   counter: '受付',
   device: 'ガラスケース',
   entrance: '正面玄関',
+  crate: '木箱',
 }
 
 /** 調べても時間の進まない飾り */
@@ -181,6 +197,13 @@ export const CLUES: Record<ClueId, Clue> = {
   guardPatrol: { title: '警備員', text: '五十六分、彫刻室へ見回り。三分で戻る。' },
   dial: { title: '装置の溝', text: '四つの数字。「はじまりへ」と彫られている。' },
   curatorHint: { title: '祖父の口癖', text: '「終わらせたいなら、はじまりに戻れ」' },
+  normalEnd: { title: '1450', text: '時は止まった。三時は、来なかった。' },
+  clockHand: { title: '大時計', text: '長針が、最初からなかった。' },
+  sketchBack: { title: '素描の裏', text: '「長針は眠らせた。冷たい部屋の、箱の中」' },
+  handFound: { title: '真鍮の長針', text: '収蔵庫の木箱の底に。' },
+  clockFixed: { title: '動き出した大時計', text: '長針をはめると、本当の時刻を刻みはじめた。' },
+  lastMinute: { title: '溝の上の銘', text: '「進みたいなら、最後の一分に、次の刻を」' },
+  curatorHint2: { title: '口癖の続き', text: '「進みたいなら、いちばん怖い時刻を刻め」' },
 }
 
 export const CLUE_ORDER: ClueId[] = [
@@ -195,4 +218,11 @@ export const CLUE_ORDER: ClueId[] = [
   'guardPatrol',
   'dial',
   'curatorHint',
+  'normalEnd',
+  'clockHand',
+  'sketchBack',
+  'handFound',
+  'clockFixed',
+  'curatorHint2',
+  'lastMinute',
 ]
