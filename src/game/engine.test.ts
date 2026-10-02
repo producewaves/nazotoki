@@ -138,7 +138,7 @@ const afterNormalEnd = () => {
   return reducer(s, { type: 'continue' })
 }
 
-describe('ノーマルエンドの後', () => {
+describe('ふたつの結末', () => {
   it('記憶を持ったまま二時五十分へ戻り、ループごとの状態はリセットされる', () => {
     const s = afterNormalEnd()
     expect(s.status).toBe('playing')
@@ -148,11 +148,11 @@ describe('ノーマルエンドの後', () => {
     expect(s.time).toBe(LOOP_START)
   })
 
-  it('ノーマルエンドの前は、木箱を調べても何も見つからない', () => {
-    let s = play(initialState(), [...toCounter, ...counterToVault])
-    s = play(s, [{ type: 'enterCode', target: 'vaultDoor', code: '1887' }, ...vaultToCrate, interact])
-    expect(facingLabel(s)).toBe('木箱')
-    expect(s.hasHand).toBe(false)
+  it('1周目から、大時計に長針がないことに気づける', () => {
+    let s = play(initialState(), [...go('right'), ...go('up', 7), ...go('left', 3), interact])
+    expect(facingLabel(s)).toBe('大時計')
+    expect(s.clues).toContain('clockHand')
+    expect(s.log.slice(s.mark).some((e) => e.text.includes('記憶した'))).toBe(true)
   })
 
   it('長針なしで1505を入れても進まない', () => {
@@ -166,8 +166,8 @@ describe('ノーマルエンドの後', () => {
     expect(s.status).not.toBe('trueEnd')
   })
 
-  it('長針で大時計を直し、最後の一分に1505を刻むとトゥルーエンド', () => {
-    let s = afterNormalEnd()
+  it('ノーマルエンドを見なくても、1周目からトゥルーエンドに行ける', () => {
+    let s = initialState()
     // 収蔵庫の木箱から長針を取る
     s = play(s, [...toCounter, ...counterToVault, { type: 'enterCode', target: 'vaultDoor', code: '1887' }])
     s = play(s, [...vaultToCrate, interact])

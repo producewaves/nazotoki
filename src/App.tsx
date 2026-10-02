@@ -5,6 +5,18 @@ import { GameView } from './ui/GameView'
 import { pressDir, type Input } from './ui/input'
 
 const STORAGE_KEY = 'nazotoki:save:v3'
+const ZOOM_KEY = 'nazotoki:zoom'
+const ZOOMS = [1.5, 2, 2.5, 3, 4]
+
+const loadZoom = () => {
+  try {
+    const z = Number(localStorage.getItem(ZOOM_KEY))
+    if (ZOOMS.includes(z)) return z
+  } catch {
+    // 読めなければ既定値
+  }
+  return 2.5
+}
 
 const load = (): GameState => {
   try {
@@ -141,6 +153,29 @@ function Ending({
   )
 }
 
+/** 記憶の一覧。広い画面では横に、狭い画面ではボタンから開く */
+function Memory({ clues, onRestart }: { clues: GameState['clues']; onRestart: () => void }) {
+  return (
+    <>
+      {clues.length === 0 ? (
+        <p className="empty">まだ、何も。</p>
+      ) : (
+        <ul>
+          {CLUE_ORDER.filter((id) => clues.includes(id)).map((id) => (
+            <li key={id}>
+              <strong>{CLUES[id].title}</strong>
+              <span>{CLUES[id].text}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <button className="restart" onClick={onRestart}>
+        最初からやり直す
+      </button>
+    </>
+  )
+}
+
 const STAGE_CLASS: Record<GameState['status'], string> = {
   playing: '',
   exploded: 'shake',
@@ -158,6 +193,24 @@ const DPAD: { dir: Dir; label: string; mark: string }[] = [
 export default function App() {
   const [state, dispatch] = useReducer(reducer, undefined, load)
   const input = useRef<Input>({ held: null, queue: [] })
+  const [zoom, setZoom] = useState(loadZoom)
+  const [memoryOpen, setMemoryOpen] = useState(false)
+  const [seenClues, setSeenClues] = useState(state.clues.length)
+  const unread = state.clues.length - seenClues
+
+  const changeZoom = (step: number) => {
+    const next = ZOOMS[Math.min(ZOOMS.length - 1, Math.max(0, ZOOMS.indexOf(zoom) + step))]
+    setZoom(next)
+    try {
+      localStorage.setItem(ZOOM_KEY, String(next))
+    } catch {
+      // 保存できなくても拡大はできる
+    }
+  }
+  const openMemory = () => {
+    setSeenClues(state.clues.length)
+    setMemoryOpen(true)
+  }
 
   useEffect(() => {
     save(state)
@@ -186,6 +239,10 @@ export default function App() {
         <div className="hud-stats">
           {state.hasKey && <span className="item">鍵</span>}
           {state.hasHand && <span className="item">長針</span>}
+          <button className={`memory-button ${unread > 0 ? 'unread' : ''}`} onClick={openMemory}>
+            記憶 {state.clues.length}
+            {unread > 0 && <span className="badge">+{unread}</span>}
+          </button>
           <span className="loop">{state.loop}周目</span>
           <span className={`clock ${remaining <= 120 && state.status !== 'trueEnd' ? 'danger' : ''}`}>
             {formatTime(state.time)}
@@ -197,7 +254,15 @@ export default function App() {
       <main className="layout">
         <section className="scene">
           <div className={`stage ${STAGE_CLASS[state.status]}`}>
-            <GameView state={state} dispatch={dispatch} input={input} />
+            <GameView state={state} dispatch={dispatch} input={input} zoom={zoom} />
+            <div className="zoom">
+              <button aria-label="縮小" disabled={zoom === ZOOMS[0]} onClick={() => changeZoom(-1)}>
+                －
+              </button>
+              <button aria-label="拡大" disabled={zoom === ZOOMS.at(-1)} onClick={() => changeZoom(1)}>
+                ＋
+              </button>
+            </div>
           </div>
 
           <TextBox key={`${state.loop}-${state.log.length}`} entries={state.log.slice(state.mark)} />
@@ -246,23 +311,21 @@ export default function App() {
 
         <aside className="notebook">
           <h2>記憶</h2>
-          {state.clues.length === 0 ? (
-            <p className="empty">まだ、何も。</p>
-          ) : (
-            <ul>
-              {CLUE_ORDER.filter((id) => state.clues.includes(id)).map((id) => (
-                <li key={id}>
-                  <strong>{CLUES[id].title}</strong>
-                  <span>{CLUES[id].text}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-          <button className="restart" onClick={restart}>
-            最初からやり直す
-          </button>
+          <Memory clues={state.clues} onRestart={restart} />
         </aside>
       </main>
+
+      {memoryOpen && (
+        <div className="overlay sheet" role="dialog" aria-modal="true" onClick={() => setMemoryOpen(false)}>
+          <div className="notebook sheet-body" onClick={(e) => e.stopPropagation()}>
+            <div className="sheet-head">
+              <h2>記憶</h2>
+              <button onClick={() => setMemoryOpen(false)}>閉じる</button>
+            </div>
+            <Memory clues={state.clues} onRestart={restart} />
+          </div>
+        </div>
+      )}
 
       {state.prompt && state.status === 'playing' && (
         <CodePad

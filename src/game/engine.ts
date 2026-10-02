@@ -1,4 +1,5 @@
 import {
+  CLUES,
   COST,
   DECOR_TEXT,
   DEVICE_CODE,
@@ -76,6 +77,7 @@ export type Action =
 
 const narration = (text: string): LogEntry => ({ kind: 'narration', text })
 const speech = (text: string): LogEntry => ({ kind: 'speech', text })
+const system = (text: string): LogEntry => ({ kind: 'system', text })
 
 export const DELTA: Record<Dir, Pos> = {
   up: { x: 0, y: -1 },
@@ -161,7 +163,9 @@ export const canStep = (state: GameState, dir: Dir): boolean =>
   tileAt(state, ahead({ pos: state.pos, facing: dir })).kind === 'floor'
 
 const loopStartLog = (loop: number, seenNormal: boolean): LogEntry[] => {
-  if (loop === 1) return [narration('閉館間際の美術館。'), narration('大時計が、二時五十分を指している。')]
+  if (loop === 1) {
+    return [narration('閉館間際の美術館。'), narration('大時計が、二時五十分を指している。……長い針が、見当たらない。')]
+  }
   if (seenNormal) return [narration('……二時五十分。'), narration('あの静けさを、覚えている。')]
   return [narration('……また、二時五十分。')]
 }
@@ -214,18 +218,13 @@ const examine = (state: GameState, target: TargetId): Outcome => {
           patch: { hasHand: false, clockFixed: true },
         }
       }
-      if (state.seenNormal) {
-        return {
-          cost,
-          log: [narration('……長針が、ない。'), narration('ずっと二時五十分だと思っていた。短針しか、なかったのに。')],
-          clues: ['clockHand'],
-        }
+      if (state.loop === 1) {
+        return { cost, log: [narration('振り子が、重たく揺れている。'), narration('……長針が、ない。短い針だけが、二と三のあいだ。')], clues: ['clockHand'] }
       }
-      if (state.loop === 1) return { cost, log: [narration('振り子が、重たく揺れている。')] }
       return {
         cost,
-        log: [narration('振り子が揺れている。目覚めるたび、この針は二時五十分だった。')],
-        clues: ['clock'],
+        log: [narration('振り子が揺れている。目覚めるたび、この時計は二時五十分だった。'), narration('……長針は、ない。')],
+        clues: ['clock', 'clockHand'],
       }
     case 'portrait':
       return {
@@ -236,14 +235,11 @@ const examine = (state: GameState, target: TargetId): Outcome => {
     case 'harbor':
       return { cost, log: [narration('夕暮れの港。船は一隻も出ていない。')] }
     case 'sketch':
-      if (state.seenNormal) {
-        return {
-          cost,
-          log: [narration('誰かの横顔の素描。額の裏に、鉛筆の走り書き。'), narration('「長針は眠らせた。冷たい部屋の、箱の中」')],
-          clues: ['sketchBack'],
-        }
+      return {
+        cost,
+        log: [narration('誰かの横顔の素描。額の裏に、鉛筆の走り書き。'), narration('「長針は眠らせた。冷たい部屋の、箱の中」')],
+        clues: ['sketchBack'],
       }
-      return { cost, log: [narration('誰かの横顔の素描。題名はない。')] }
     case 'desk':
       if (npcPos('curator', state.time)) {
         return { cost, log: [speech('学芸員「そこ、触らないでください」')] }
@@ -298,7 +294,7 @@ const examine = (state: GameState, target: TargetId): Outcome => {
     case 'entrance':
       return { cost, log: [narration('鍵がかかっている。外は、やけに静かだ。')] }
     case 'crate':
-      if (state.seenNormal && !state.hasHand && !state.clockFixed) {
+      if (!state.hasHand && !state.clockFixed) {
         return {
           cost,
           log: [narration('箱の底に、布にくるまれた真鍮の長い針。')],
@@ -332,7 +328,7 @@ const talk = (state: GameState, npc: NpcId): Outcome => {
       clues: ['guardCode', 'curatorBreak'],
     }
   }
-  if (state.seenNormal && state.clues.includes('device')) {
+  if (state.clues.includes('curatorHint')) {
     return {
       cost,
       log: [
@@ -379,7 +375,7 @@ const enterCode = (state: GameState, target: CodeTarget, code: string): Outcome 
       patch: { status: 'trueEnd', prompt: null },
     }
   }
-  if (code === FORWARD_CODE && state.seenNormal) {
+  if (code === FORWARD_CODE) {
     return { cost, log: [narration('歯車が軋んだ。……何かが、足りない。')] }
   }
   return { cost, log: [narration('何も起こらない。')] }
@@ -398,7 +394,9 @@ const explode = (state: GameState): GameState => ({
 /** 時間を進め、15:05になったら爆発させる */
 const advance = (state: GameState, outcome: Outcome): GameState => {
   const clues = (outcome.clues ?? []).reduce(addClue, state.clues)
-  const next = withLog({ ...state, ...outcome.patch, time: state.time + outcome.cost, clues }, outcome.log)
+  // 新しく覚えたことは、テキスト欄にも一言出す
+  const learned = clues.filter((c) => !state.clues.includes(c)).map((c) => system(`― 記憶した：${CLUES[c].title}`))
+  const next = withLog({ ...state, ...outcome.patch, time: state.time + outcome.cost, clues }, [...outcome.log, ...learned])
   if (next.status === 'playing' && next.time >= EXPLOSION_TIME) return explode(next)
   return next
 }

@@ -72,7 +72,7 @@ export const formatTime = (seconds: number) => {
  * 壁の絵：`P` 肖像画 / `Q` 港の絵 / `R` 素描
  * 物：`C` 大時計 / `D` 学芸員の机 / `T` 受付カウンター / `M` ガラスケースの装置
  * 飾り：`B` 本棚 / `d` 作業机 / `S` 彫像 / `b` ベンチ / `p` 植木 / `x` 木箱
- * `X` 木箱（見た目は `x` と同じ。ノーマルエンドの後だけ意味を持つ）
+ * `X` 木箱（見た目は `x` と同じ。長針が眠っている）
  */
 export const MAP = [
   '########################',
@@ -198,7 +198,7 @@ export const CLUES: Record<ClueId, Clue> = {
   dial: { title: '装置の溝', text: '四つの数字。「はじまりへ」と彫られている。' },
   curatorHint: { title: '祖父の口癖', text: '「終わらせたいなら、はじまりに戻れ」' },
   normalEnd: { title: '1450', text: '時は止まった。三時は、来なかった。' },
-  clockHand: { title: '大時計', text: '長針が、最初からなかった。' },
+  clockHand: { title: '長針のない大時計', text: '短い針だけが、二と三のあいだ。' },
   sketchBack: { title: '素描の裏', text: '「長針は眠らせた。冷たい部屋の、箱の中」' },
   handFound: { title: '真鍮の長針', text: '収蔵庫の木箱の底に。' },
   clockFixed: { title: '動き出した大時計', text: '長針をはめると、本当の時刻を刻みはじめた。' },

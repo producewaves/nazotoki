@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, type Dispatch, type RefObject } fro
 import { ahead, canStep, facingLabel, npcPos, type Action, type Dir, type GameState, type Pos } from '../game/engine'
 import { MAP, type NpcId } from '../game/scenario'
 import { HEIGHT, LOOKS, WIDTH, drawScene, type Actor } from '../render/scene'
+import { T } from '../render/sprites'
 import { pressDir, type Input } from './input'
 
 const PLAYER_SPEED = 7 // マス/秒
@@ -81,16 +82,21 @@ export function GameView({
   state,
   dispatch,
   input,
+  zoom,
 }: {
   state: GameState
   dispatch: Dispatch<Action>
   input: RefObject<Input>
+  /** 1ドットを何pxで表示するか。画面からはみ出した分はスクロールで見る */
+  zoom: number
 }) {
   const canvas = useRef<HTMLCanvasElement>(null)
+  const viewport = useRef<HTMLDivElement>(null)
   const stateRef = useRef(state)
   useLayoutEffect(() => {
     stateRef.current = state
   }, [state])
+  const zoomRef = useRef(zoom)
 
   // キーボード
   useEffect(() => {
@@ -123,19 +129,16 @@ export function GameView({
     }
   }, [dispatch, input])
 
-  // 画面サイズに合わせて内部解像度を決める
-  useEffect(() => {
+  // 拡大率に合わせて表示サイズと内部解像度を決める
+  useLayoutEffect(() => {
     const el = canvas.current!
-    const resize = () => {
-      const scale = Math.max(1, Math.round((el.clientWidth * devicePixelRatio) / WIDTH))
-      el.width = WIDTH * scale
-      el.height = HEIGHT * scale
-    }
-    resize()
-    const ro = new ResizeObserver(resize)
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
+    el.style.width = `${WIDTH * zoom}px`
+    el.style.height = `${HEIGHT * zoom}px`
+    const scale = Math.max(1, Math.round(zoom * devicePixelRatio))
+    el.width = WIDTH * scale
+    el.height = HEIGHT * scale
+    zoomRef.current = zoom
+  }, [zoom])
 
   // 描画ループ
   useEffect(() => {
@@ -149,6 +152,10 @@ export function GameView({
       npcs.set(id, { x: p?.x ?? 0, y: p?.y ?? 0, dir: 'down', anim: 0, alpha: p ? 1 : 0, path: [], target: p })
     }
     let loop = s0.loop
+    // カメラ：主人公が動いたとき（と拡大率が変わったとき）だけ追いかける。止まっている間は自由にスクロールできる
+    let camX = NaN
+    let camY = NaN
+    let camZoom = 0
     let waitingFor: GameState | null = null
     let waitingSince = 0
     let raf = 0
@@ -242,6 +249,16 @@ export function GameView({
         look,
       })
 
+      const vp = viewport.current
+      if (vp && (player.x !== camX || player.y !== camY || zoomRef.current !== camZoom)) {
+        const z = zoomRef.current
+        vp.scrollLeft = (player.x + 0.5) * T * z - vp.clientWidth / 2
+        vp.scrollTop = (player.y + 0.5) * T * z - vp.clientHeight / 2
+        camX = player.x
+        camY = player.y
+        camZoom = z
+      }
+
       const scale = el.width / WIDTH
       ctx.setTransform(scale, 0, 0, scale, 0, 0)
       drawScene(ctx, {
@@ -264,5 +281,9 @@ export function GameView({
     return () => cancelAnimationFrame(raf)
   }, [dispatch, input])
 
-  return <canvas ref={canvas} className="world" aria-label="美術館の見取り図" />
+  return (
+    <div className="viewport" ref={viewport}>
+      <canvas ref={canvas} className="world" aria-label="美術館の見取り図" />
+    </div>
+  )
 }
