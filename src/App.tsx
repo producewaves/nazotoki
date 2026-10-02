@@ -1,24 +1,10 @@
-import {
-  useEffect,
-  useLayoutEffect,
-  useReducer,
-  useRef,
-  useState,
-  type CSSProperties,
-  type FormEvent,
-} from 'react'
-import {
-  facingLabel,
-  initialState,
-  isCuratorAway,
-  reducer,
-  type Action,
-  type Dir,
-  type GameState,
-} from './game/engine'
-import { CLUES, CLUE_ORDER, EXPLOSION_TIME, ROOMS, formatTime } from './game/scenario'
+import { useEffect, useReducer, useRef, useState, type FormEvent } from 'react'
+import { facingLabel, initialState, placeName, reducer, type Dir, type GameState, type LogEntry } from './game/engine'
+import { CLUES, CLUE_ORDER, EXPLOSION_TIME, formatTime } from './game/scenario'
+import { GameView } from './ui/GameView'
+import { pressDir, type Input } from './ui/input'
 
-const STORAGE_KEY = 'nazotoki:save:v2'
+const STORAGE_KEY = 'nazotoki:save:v3'
 
 const load = (): GameState => {
   try {
@@ -38,78 +24,27 @@ const save = (state: GameState) => {
   }
 }
 
-const KEY_DIRS: Record<string, Dir> = {
-  ArrowUp: 'up',
-  ArrowDown: 'down',
-  ArrowLeft: 'left',
-  ArrowRight: 'right',
-  w: 'up',
-  s: 'down',
-  a: 'left',
-  d: 'right',
-}
+/** 直近の出来事を1文字ずつ表示する。クリックで全文 */
+function TextBox({ entries }: { entries: LogEntry[] }) {
+  const total = entries.reduce((n, e) => n + e.text.length, 0)
+  const [shown, setShown] = useState(0)
+  useEffect(() => {
+    const id = setInterval(() => setShown((n) => Math.min(total, n + 2)), 30)
+    return () => clearInterval(id)
+  }, [total])
 
-const INTERACT_KEYS = new Set([' ', 'Enter', 'z', 'Z'])
-
-/** マップの文字ごとの見た目 */
-const TILE_ICON: Record<string, string> = {
-  C: '🕰️',
-  P: '🖼️',
-  D: '📔',
-  M: '⚙️',
-  G: '👮',
-  K: '👩',
-  x: '📦',
-  b: '🪑',
-  p: '🪴',
-  S: '🚪',
-}
-
-const tileClass = (ch: string) => {
-  if (ch === '#') return 'wall'
-  if (ch === 'S') return 'door locked'
-  if ('lgo'.includes(ch)) return 'door'
-  if (ch === 'D') return 'floor desk'
-  if (ch === 'P') return 'wall'
-  return 'floor'
-}
-
-function RoomMap({ state }: { state: GameState }) {
-  const map = ROOMS[state.room].map
-  const width = map[0].length
-  const curatorAway = isCuratorAway(state.time)
-  const front = {
-    up: [0, -1],
-    down: [0, 1],
-    left: [-1, 0],
-    right: [1, 0],
-  }[state.facing]
-  const fx = state.pos.x + front[0]
-  const fy = state.pos.y + front[1]
-
+  const starts = entries.map((_, i) => entries.slice(0, i).reduce((n, e) => n + e.text.length, 0))
   return (
-    <div className="map" style={{ '--cols': width } as CSSProperties}>
-      {map.flatMap((row, y) =>
-        [...row].map((raw, x) => {
-          const ch = raw === 'S' && state.storageUnlocked ? 'open' : raw
-          const hidden = raw === 'K' && curatorAway
-          const isPlayer = state.pos.x === x && state.pos.y === y
-          const isFront = fx === x && fy === y && facingLabel(state) !== null
-          const icon = hidden || ch === 'open' ? '' : TILE_ICON[raw]
-          return (
-            <div
-              key={`${x}-${y}`}
-              className={`tile ${ch === 'open' ? 'door' : tileClass(raw)} ${isFront ? 'front' : ''}`}
-            >
-              {isPlayer ? (
-                <span className={`player face-${state.facing}`}>🧑</span>
-              ) : (
-                icon && <span className="icon">{icon}</span>
-              )}
-            </div>
-          )
-        }),
-      )}
+    <div className="textbox" aria-live="polite" onClick={() => setShown(total)}>
+      {entries.map((e, i) => {
+        const text = e.text.slice(0, Math.max(0, shown - starts[i]))
+        return (
+          <p key={i} className={`log-${e.kind}`}>
+            {text}
+            <span className="ghost">{e.text.slice(text.length)}</span>
+          </p>
+        )
+      })}
     </div>
   )
 }
@@ -140,17 +75,17 @@ function CodePad({
           pattern="[0-9]*"
           maxLength={4}
           placeholder="0000"
-          aria-label="4桁の番号"
+          aria-label="4桁の数字"
           value={code}
           onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 4))}
           onKeyDown={(e) => e.key === 'Escape' && onClose()}
         />
         <div className="row">
           <button type="button" onClick={onClose}>
-            やめる
+            離れる
           </button>
           <button type="submit" className="primary" disabled={code.length !== 4}>
-            入力（1分）
+            入力
           </button>
         </div>
       </form>
@@ -158,82 +93,82 @@ function CodePad({
   )
 }
 
+const DPAD: { dir: Dir; label: string; mark: string }[] = [
+  { dir: 'up', label: '上', mark: '▲' },
+  { dir: 'left', label: '左', mark: '◀' },
+  { dir: 'right', label: '右', mark: '▶' },
+  { dir: 'down', label: '下', mark: '▼' },
+]
+
 export default function App() {
   const [state, dispatch] = useReducer(reducer, undefined, load)
-  const messages = useRef<HTMLDivElement>(null)
+  const input = useRef<Input>({ held: null, queue: [] })
 
   useEffect(() => {
     save(state)
   }, [state])
 
-  // ページ全体は動かさず、メッセージ欄の中だけを最新までスクロールする
-  useLayoutEffect(() => {
-    const box = messages.current
-    if (box) box.scrollTop = box.scrollHeight
-  }, [state.log])
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (state.status !== 'playing' || state.prompt) return
-      if (e.target instanceof HTMLInputElement) return
-      const dir = KEY_DIRS[e.key]
-      let action: Action | null = null
-      if (dir) action = { type: 'step', dir }
-      else if (INTERACT_KEYS.has(e.key)) action = { type: 'interact' }
-      if (!action) return
-      e.preventDefault()
-      dispatch(action)
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [state.status, state.prompt])
-
   const playing = state.status === 'playing' && !state.prompt
   const remaining = EXPLOSION_TIME - state.time
   const label = facingLabel(state)
-  const recent = state.log.slice(-40)
+  const seconds = String(state.time % 60).padStart(2, '0')
+
+  const release = () => {
+    input.current.held = null
+  }
 
   const restart = () => {
-    if (confirm('メモ帳も含めて最初からやり直しますか？')) dispatch({ type: 'restart' })
+    if (confirm('記憶も含めて、最初からやり直しますか？')) dispatch({ type: 'restart' })
   }
 
   return (
     <div className="app">
       <header className="hud">
-        <h1>午後3時の美術館</h1>
+        <div className="title">
+          <h1>午後3時の美術館</h1>
+          <span className="place">{placeName(state)}</span>
+        </div>
         <div className="hud-stats">
-          <span className="loop">ループ {state.loop}</span>
-          <span className={`clock ${remaining <= 3 ? 'danger' : ''}`}>{formatTime(state.time)}</span>
+          {state.hasKey && (
+            <span className="item" title="小さな真鍮の鍵">
+              🗝️
+            </span>
+          )}
+          <span className="loop">{state.loop}周目</span>
+          <span className={`clock ${remaining <= 120 ? 'danger' : ''}`}>
+            {formatTime(state.time)}
+            <small>:{seconds}</small>
+          </span>
         </div>
       </header>
 
       <main className="layout">
         <section className="scene">
-          <div className="room-name">{ROOMS[state.room].name}</div>
-          <RoomMap state={state} />
-
-          <div className="messages" ref={messages} aria-live="polite">
-            {recent.map((entry, i) => (
-              <p key={state.log.length - recent.length + i} className={`log-${entry.kind}`}>
-                {entry.text}
-              </p>
-            ))}
+          <div className={`stage ${state.status === 'exploded' ? 'shake' : ''}`}>
+            <GameView state={state} dispatch={dispatch} input={input} />
           </div>
 
+          <TextBox key={`${state.loop}-${state.log.length}`} entries={state.log.slice(state.mark)} />
+
           <div className="controls">
-            <div className="dpad" aria-label="移動">
-              <button className="up" aria-label="上" disabled={!playing} onClick={() => dispatch({ type: 'step', dir: 'up' })}>
-                ▲
-              </button>
-              <button className="left" aria-label="左" disabled={!playing} onClick={() => dispatch({ type: 'step', dir: 'left' })}>
-                ◀
-              </button>
-              <button className="right" aria-label="右" disabled={!playing} onClick={() => dispatch({ type: 'step', dir: 'right' })}>
-                ▶
-              </button>
-              <button className="down" aria-label="下" disabled={!playing} onClick={() => dispatch({ type: 'step', dir: 'down' })}>
-                ▼
-              </button>
+            <div className="dpad">
+              {DPAD.map(({ dir, label: name, mark }) => (
+                <button
+                  key={dir}
+                  className={dir}
+                  aria-label={name}
+                  disabled={!playing}
+                  onPointerDown={(e) => {
+                    e.currentTarget.setPointerCapture(e.pointerId)
+                    pressDir(input.current, dir)
+                  }}
+                  onPointerUp={release}
+                  onPointerCancel={release}
+                  onContextMenu={(e) => e.preventDefault()}
+                >
+                  {mark}
+                </button>
+              ))}
             </div>
             <div className="side-buttons">
               <button
@@ -242,7 +177,7 @@ export default function App() {
                 onClick={() => dispatch({ type: 'interact' })}
               >
                 調べる
-                <small>{label ?? '目の前に何もない'}</small>
+                <small>{label ?? '　'}</small>
               </button>
               <div className="wait">
                 <button disabled={!playing} onClick={() => dispatch({ type: 'wait', minutes: 1 })}>
@@ -254,17 +189,13 @@ export default function App() {
               </div>
             </div>
           </div>
-          <p className="hint">
-            歩くだけなら時間はたちません。調べる・話す・部屋を移る・待つと時間が進みます。
-            <span className="keys">（キーボード：矢印キーで移動、スペースで調べる）</span>
-          </p>
+          <p className="keys">矢印キー / WASD：歩く　スペース：調べる</p>
         </section>
 
         <aside className="notebook">
-          <h2>メモ帳</h2>
-          <p className="notebook-sub">ループしても消えない記憶</p>
+          <h2>記憶</h2>
           {state.clues.length === 0 ? (
-            <p className="empty">まだ何もわかっていない。</p>
+            <p className="empty">まだ、何も。</p>
           ) : (
             <ul>
               {CLUE_ORDER.filter((id) => state.clues.includes(id)).map((id) => (
@@ -284,7 +215,7 @@ export default function App() {
       {state.prompt && state.status === 'playing' && (
         <CodePad
           key={state.prompt}
-          label={state.prompt === 'storageDoor' ? '扉の暗証番号' : '装置の入力盤'}
+          label={state.prompt === 'vaultDoor' ? '鉄の扉' : '四つの溝'}
           onSubmit={(code) => dispatch({ type: 'enterCode', target: state.prompt!, code })}
           onClose={() => dispatch({ type: 'closePrompt' })}
         />
@@ -293,11 +224,9 @@ export default function App() {
       {state.status === 'exploded' && (
         <div className="overlay flash" role="dialog" aria-modal="true">
           <div className="dialog">
-            <p className="big">ドォン――</p>
-            <p>視界が真っ白に染まっていく。</p>
-            <p>……でも、覚えていることがある。</p>
+            <p className="big">――光。</p>
             <button className="primary" autoFocus onClick={() => dispatch({ type: 'wake' })}>
-              目を覚ます
+              目を開ける
             </button>
           </div>
         </div>
@@ -306,13 +235,12 @@ export default function App() {
       {state.status === 'cleared' && (
         <div className="overlay" role="dialog" aria-modal="true">
           <div className="dialog">
-            <p className="big">ループ脱出！</p>
-            <p>やがて大時計は15:05を過ぎ、何事もなく時を刻み続けた。</p>
+            <p className="big">時計の音が、止んだ。</p>
             <p>
-              {state.loop}周目の{formatTime(state.time)}に脱出しました。
+              {state.loop}周目　{formatTime(state.time)}
             </p>
             <button className="primary" autoFocus onClick={() => dispatch({ type: 'restart' })}>
-              もう一度遊ぶ
+              もう一度
             </button>
           </div>
         </div>

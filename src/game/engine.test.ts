@@ -1,110 +1,119 @@
 import { describe, expect, it } from 'vitest'
-import { facingLabel, initialState, reducer, type Action, type Dir, type GameState } from './engine'
-import { CURATOR_AWAY_FROM, LOOP_START } from './scenario'
+import { canStep, facingLabel, initialState, npcPos, placeName, reducer, type Action, type Dir, type GameState } from './engine'
+import { at, LOOP_START, START_POS } from './scenario'
 
 const play = (state: GameState, actions: Action[]) => actions.reduce(reducer, state)
-const steps = (dir: Dir, n: number): Action[] => Array.from({ length: n }, () => ({ type: 'step', dir }))
+const go = (dir: Dir, n = 1): Action[] => Array.from({ length: n }, () => ({ type: 'step', dir }))
+const interact: Action = { type: 'interact' }
+const waitUntil = (s: GameState, time: number) =>
+  reducer(s, { type: 'wait', minutes: Math.ceil((time - s.time) / 60) })
 
-/** ロビーの開始位置から各場所へ歩く道順 */
-const toStorageDoor = steps('up', 5)
-const toGallery = [...steps('up', 1), ...steps('right', 5)]
-const galleryToOffice = steps('right', 9)
-const officeToDesk = [...steps('right', 4), ...steps('up', 1)]
-const intoStorage = steps('up', 1)
-const storageToDevice = steps('up', 3)
+/** 開始位置（ロビー）からの道順 */
+const toCounter = [...go('right'), ...go('up', 2), ...go('left', 2)]
+/** 受付の前から収蔵庫の扉まで */
+const counterToVault = [...go('up', 9), ...go('right', 4)]
+/** 開いた収蔵庫の扉からガラスケースの前まで */
+const vaultToDevice = [...go('right', 5), ...go('up', 2)]
+const toDesk = [...go('right'), ...go('up', 11), ...go('left', 8), ...go('up')]
+const toPortrait = [...go('right'), ...go('up', 3), ...go('left', 8), ...go('up', 5)]
 
 describe('移動', () => {
   it('壁には入れず、向きだけ変わる', () => {
-    const s = play(initialState(), steps('down', 3))
-    expect(s.pos).toEqual(initialState().pos)
+    const s = play(initialState(), go('down', 3))
+    expect(s.pos).toEqual(START_POS)
     expect(s.facing).toBe('down')
-  })
-
-  it('歩くだけでは時間が進まず、部屋を移ると1分進む', () => {
-    let s = play(initialState(), steps('up', 1))
     expect(s.time).toBe(LOOP_START)
-    s = play(initialState(), toGallery)
-    expect(s.room).toBe('gallery')
-    expect(s.time).toBe(LOOP_START + 1)
   })
 
-  it('人や物の前では「調べる」対象の名前がわかる', () => {
-    const s = play(initialState(), [...steps('up', 1), ...steps('left', 1), ...steps('up', 1)])
+  it('1歩ごとに5秒進み、部屋の切り替えなしで館内を歩ける', () => {
+    const s = play(initialState(), toPortrait)
+    expect(placeName(s)).toBe('絵画室')
+    expect(facingLabel(s)).toBe('肖像画')
+    // 最後の1回は肖像画にぶつかって向きが変わるだけ
+    expect(s.time).toBe(LOOP_START + 5 * 16)
+  })
+
+  it('人はふさがっていて通れない', () => {
+    const s = initialState()
     expect(facingLabel(s)).toBe('警備員')
+    expect(canStep(s, 'up')).toBe(false)
   })
 })
 
 describe('ループ', () => {
-  it('15:05になると爆発し、目覚めると知識だけ持って14:50のロビーに戻る', () => {
-    let s = play(initialState(), [...steps('up', 1), ...steps('left', 1), ...steps('up', 1), { type: 'interact' }])
-    expect(s.clues).toContain('guardCode')
-    s = play(s, [{ type: 'wait', minutes: 20 }])
+  it('15:05に爆発し、目覚めると記憶だけ持って開始位置に戻る', () => {
+    let s = reducer(initialState(), interact)
+    expect(s.clues).toEqual(expect.arrayContaining(['guardCode', 'curatorBreak']))
+    s = reducer(s, { type: 'wait', minutes: 20 })
     expect(s.status).toBe('exploded')
     expect(s.clues).toContain('explosion')
 
     s = reducer(s, { type: 'wake' })
     expect(s.loop).toBe(2)
     expect(s.time).toBe(LOOP_START)
-    expect(s.room).toBe('lobby')
-    expect(s.pos).toEqual(initialState().pos)
-    expect(s.clues).toEqual(expect.arrayContaining(['guardCode', 'explosion']))
+    expect(s.pos).toEqual(START_POS)
+    expect(s.clues).toContain('guardCode')
   })
 
-  it('開けた扉はループでリセットされる', () => {
-    let s = play(initialState(), [...toStorageDoor, { type: 'enterCode', target: 'storageDoor', code: '1887' }])
-    expect(s.storageUnlocked).toBe(true)
+  it('扉・鍵はループでリセットされる', () => {
+    let s = play(initialState(), [...toCounter, ...counterToVault])
+    s = reducer(s, { type: 'enterCode', target: 'vaultDoor', code: '1887' })
+    expect(s.vaultUnlocked).toBe(true)
     s = play(s, [{ type: 'wait', minutes: 20 }, { type: 'wake' }])
-    expect(s.storageUnlocked).toBe(false)
+    expect(s.vaultUnlocked).toBe(false)
+    expect(s.hasKey).toBe(false)
   })
 
   it('爆発中は行動できない', () => {
-    const s = play(initialState(), [{ type: 'wait', minutes: 20 }])
-    expect(reducer(s, { type: 'step', dir: 'up' })).toBe(s)
+    const s = reducer(initialState(), { type: 'wait', minutes: 20 })
+    expect(reducer(s, { type: 'step', dir: 'right' })).toBe(s)
   })
 })
 
-describe('学芸員', () => {
-  const toDesk = [...toGallery, ...galleryToOffice, ...officeToDesk]
-
-  it('学芸員がいる間は手帳を読めない', () => {
-    const s = play(initialState(), [...toDesk, { type: 'interact' }])
-    expect(s.room).toBe('office')
+describe('人物の予定', () => {
+  it('学芸員は15:00〜15:04に席を外し、その間だけ手帳を読める', () => {
+    let s = play(initialState(), [...toDesk, interact])
     expect(s.clues).not.toContain('notebook')
+    s = waitUntil(s, at(15, 0))
+    expect(npcPos('curator', s.time)).toBeNull()
+    s = reducer(s, interact)
+    expect(s.clues).toContain('notebook')
   })
 
-  it('15:00に席を外した隙に手帳を読める', () => {
-    let s = play(initialState(), toDesk)
-    s = reducer(s, { type: 'wait', minutes: CURATOR_AWAY_FROM - s.time })
-    s = reducer(s, { type: 'interact' })
-    expect(s.clues).toContain('notebook')
-    expect(s.status).toBe('playing')
+  it('警備員が見回りに出ている間だけ、受付の鍵を取れる', () => {
+    let s = play(initialState(), [...toCounter, interact])
+    expect(s.hasKey).toBe(false)
+    s = waitUntil(s, at(14, 56))
+    expect(placeName({ ...s, pos: npcPos('guard', s.time)! })).toBe('彫刻室')
+    s = reducer(s, interact)
+    expect(s.hasKey).toBe(true)
   })
 })
 
-describe('暗証番号', () => {
-  it('鍵のかかった扉に触れると入力画面が開き、間違った番号では開かない', () => {
-    let s = play(initialState(), toStorageDoor)
-    expect(s.room).toBe('lobby')
-    expect(s.prompt).toBe('storageDoor')
-    s = reducer(s, { type: 'enterCode', target: 'storageDoor', code: '0000' })
-    expect(s.storageUnlocked).toBe(false)
+describe('収蔵庫', () => {
+  it('扉は正しい番号でしか開かない', () => {
+    let s = play(initialState(), [...toCounter, ...counterToVault])
+    expect(s.prompt).toBe('vaultDoor')
+    expect(reducer(s, { type: 'step', dir: 'left' })).toBe(s)
+    s = reducer(s, { type: 'enterCode', target: 'vaultDoor', code: '0000' })
+    expect(s.vaultUnlocked).toBe(false)
     s = reducer(s, { type: 'closePrompt' })
     expect(s.prompt).toBeNull()
   })
 
-  it('入力画面を開いている間は歩けない', () => {
-    const s = play(initialState(), toStorageDoor)
-    expect(reducer(s, { type: 'step', dir: 'down' })).toBe(s)
+  it('鍵がないとケースは開かない', () => {
+    let s = play(initialState(), [...toCounter, ...counterToVault])
+    s = play(s, [{ type: 'enterCode', target: 'vaultDoor', code: '1887' }, ...vaultToDevice, interact])
+    expect(placeName(s)).toBe('収蔵庫')
+    expect(s.caseOpen).toBe(false)
+    expect(s.prompt).toBeNull()
   })
 
-  it('正しい手順で装置を止めるとクリアになる', () => {
-    let s = play(initialState(), [
-      ...toStorageDoor,
-      { type: 'enterCode', target: 'storageDoor', code: '1887' },
-      ...intoStorage,
-    ])
-    expect(s.room).toBe('storage')
-    s = play(s, [...storageToDevice, { type: 'interact' }])
+  it('最短の手順なら1周で脱出できる', () => {
+    let s = play(initialState(), toCounter)
+    s = waitUntil(s, at(14, 56))
+    s = play(s, [interact, ...counterToVault, { type: 'enterCode', target: 'vaultDoor', code: '1887' }])
+    s = play(s, [...vaultToDevice, interact])
     expect(s.prompt).toBe('device')
     s = reducer(s, { type: 'enterCode', target: 'device', code: '1450' })
     expect(s.status).toBe('cleared')
