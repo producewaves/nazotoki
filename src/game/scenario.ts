@@ -38,38 +38,93 @@ export const formatTime = (minutes: number) => {
 
 export interface Room {
   name: string
-  description: string
-  exits: RoomId[]
-  targets: TargetId[]
+  /**
+   * 部屋のマップ。1文字が1マス。
+   * 床・壁：`.` 床 / `#` 壁
+   * 飾り（通れない）：`x` 木箱 / `b` ベンチ / `p` 植木
+   * 調べられる物：`C` 大時計 / `P` 肖像画 / `D` 机の手帳 / `M` 奇妙な装置
+   * 人物：`G` 警備員 / `K` 学芸員（席を外している間は床になる）
+   * 出入口：`l` ロビー / `g` 展示室 / `o` 学芸員室 / `S` 地下倉庫（暗証番号つき）
+   */
+  map: string[]
 }
 
 export const ROOMS: Record<RoomId, Room> = {
   lobby: {
     name: 'ロビー',
-    description:
-      '閉館間際のロビー。正面に大きな振り子時計、奥には地下倉庫へ続く鉄の扉がある。入口には警備員が立っている。',
-    exits: ['gallery', 'storage'],
-    targets: ['clock', 'storageDoor'],
+    map: [
+      '#####S#####',
+      '#C.......p#',
+      '#.........#',
+      '#...G.....#',
+      '#.........g',
+      '#p........#',
+      '###########',
+    ],
   },
   gallery: {
     name: '展示室',
-    description: '静かな展示室。中央に一枚の肖像画が飾られている。',
-    exits: ['lobby', 'office'],
-    targets: ['painting'],
+    map: [
+      '#####P#####',
+      '#p.......p#',
+      '#.........#',
+      '#..b...b..#',
+      'l.........o',
+      '#.........#',
+      '###########',
+    ],
   },
   office: {
     name: '学芸員室',
-    description: '書類が積まれた小さな部屋。机の上に革の手帳が置いてある。',
-    exits: ['gallery'],
-    targets: ['desk'],
+    map: [
+      '#########',
+      '#x.K.D.x#',
+      '#.......#',
+      'g.......#',
+      '#.......#',
+      '#########',
+    ],
   },
   storage: {
     name: '地下倉庫',
-    description:
-      'ひんやりとした地下倉庫。奥で、時計仕掛けの奇妙な装置がカチカチと音を立てている。',
-    exits: ['lobby'],
-    targets: ['device'],
+    map: [
+      '#########',
+      '#x..M..x#',
+      '#.......#',
+      '#x.....x#',
+      '#.......#',
+      '####l####',
+    ],
   },
+}
+
+/** ゲーム開始時の立ち位置（ロビー） */
+export const START_POS = { x: 5, y: 5 }
+
+export const TARGET_TILES: Record<string, TargetId> = {
+  C: 'clock',
+  P: 'painting',
+  D: 'desk',
+  M: 'device',
+}
+
+export const NPC_TILES: Record<string, NpcId> = {
+  G: 'guard',
+  K: 'curator',
+}
+
+export const DOOR_TILES: Record<string, RoomId> = {
+  l: 'lobby',
+  g: 'gallery',
+  o: 'office',
+  S: 'storage',
+}
+
+/** 調べても時間が進まない飾り */
+export const DECOR_TEXT: Record<string, string> = {
+  x: '古い木箱が積まれている。',
+  b: '来館者用のベンチだ。',
+  p: 'よく手入れされた観葉植物だ。',
 }
 
 export const TARGET_NAMES: Record<TargetId, string> = {
